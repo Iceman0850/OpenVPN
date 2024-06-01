@@ -12,7 +12,7 @@ set -e
 # Define paths
 EASYRSA_DIR=~/easy-rsa
 OVPN_CONFIG_DIR=/etc/openvpn
-OVPN_SHARE_DIR=/mnt/smbshare/testopen
+OVPN_SHARE_DIR=~/client_certs
 
 # Define client and server names
 SERVER_NAME=Server
@@ -20,6 +20,15 @@ CLIENT_NAME=Client
 
 # Define serve IPs
 SERVER_IP="10.8.0.0 255.255.255.0"
+
+# Check if the client_certs directory exists, if not, create it
+if [ ! -d "$OVPN_SHARE_DIR" ]; then
+    mkdir -p "$OVPN_SHARE_DIR"
+    echo "Directory $OVPN_SHARE_DIR created."
+else
+    echo "Directory $OVPN_SHARE_DIR already exists."
+fi
+
 
 # Update and install OpenVPN
 apt-get update
