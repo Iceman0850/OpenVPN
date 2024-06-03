@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script is intended to install openvpn on Ubuntu 22.04. It will install all required packages and build your client cert. This script will also set firewall rules.
-# Please Modify OVPN_SHARE_DIR to where you want the client files to be copied to
+# Please Modify OVPN_SHARE_DIR to where you want the client files to be backed up to
 # After Installation setup port forwarding for port 1194
 
 # you can customize SERVER_NAME and CLIENT_NAME 
@@ -12,15 +12,16 @@ set -e
 # Define paths
 EASYRSA_DIR=~/easy-rsa
 OVPN_CONFIG_DIR=/etc/openvpn
-OVPN_CLIENT_DIR=$OVPN_CONFIG_DIR/client
+CLIENT_DIR=$OVPN_CONFIG_DIR/client
+
 # Uncomment and set OVPN_SHARE_DIR to create a backup copy of the client files
-# OVPN_SHARE_DIR=~/client_certs
+#OVPN_SHARE_DIR=~/backup
 
 # Define client and server names
 SERVER_NAME=Server
 CLIENT_NAME=Client
 
-# Define server IPs
+# Define serve IPs
 SERVER_IP="10.8.0.0 255.255.255.0"
 
 # Update and install OpenVPN
@@ -55,23 +56,12 @@ cd $EASYRSA_DIR
 openvpn --genkey secret ta.key
 cp $EASYRSA_DIR/ta.key $OVPN_CONFIG_DIR
 
-# Copy the necessary files to the server directory
+# Create the client directory if it doesn't exist
+mkdir -p $CLIENT_DIR
+
+# Copy the necessary files
 cp pki/ca.crt pki/issued/$SERVER_NAME.crt pki/private/$SERVER_NAME.key pki/dh.pem $OVPN_CONFIG_DIR
-
-# Copy the client files to the client directory
-mkdir -p $OVPN_CLIENT_DIR
-cp pki/ca.crt pki/issued/$CLIENT_NAME.crt pki/private/$CLIENT_NAME.key $OVPN_CLIENT_DIR
-
-# If OVPN_SHARE_DIR is set and not empty, create the directory if it does not exist and copy the files there
-if [ -n "$OVPN_SHARE_DIR" ]; then
-    if [ ! -d "$OVPN_SHARE_DIR" ]; then
-        mkdir -p "$OVPN_SHARE_DIR"
-        echo "Directory $OVPN_SHARE_DIR created."
-    else
-        echo "Directory $OVPN_SHARE_DIR already exists."
-    fi
-    cp pki/ca.crt pki/issued/$CLIENT_NAME.crt pki/private/$CLIENT_NAME.key $OVPN_SHARE_DIR
-fi
+cp pki/ca.crt pki/issued/$CLIENT_NAME.crt pki/private/$CLIENT_NAME.key $CLIENT_DIR
 
 # Configure the server
 cat > $OVPN_CONFIG_DIR/server.conf <<EOL
@@ -119,7 +109,7 @@ systemctl start openvpn@server
 systemctl enable openvpn@server
 
 # Generate client configuration
-cat > $OVPN_CLIENT_DIR/$CLIENT_NAME.ovpn <<EOL
+cat > $CLIENT_DIR/$CLIENT_NAME.ovpn <<EOL
 client
 dev tun
 proto udp
@@ -138,19 +128,24 @@ verb 3
 $(cat $OVPN_CONFIG_DIR/ca.crt)
 </ca>
 <cert>
-$(cat $OVPN_CLIENT_DIR/$CLIENT_NAME.crt)
+$(cat $CLIENT_DIR/$CLIENT_NAME.crt)
 </cert>
 <key>
-$(cat $OVPN_CLIENT_DIR/$CLIENT_NAME.key)
+$(cat $CLIENT_DIR/$CLIENT_NAME.key)
 </key>
 <tls-auth>
 $(cat $OVPN_CONFIG_DIR/ta.key)
 </tls-auth>
 EOL
 
-echo "OpenVPN setup is complete. Client files are in $OVPN_CLIENT_DIR."
-if [ -n "$OVPN_SHARE_DIR" ]; then
-    echo "Backup copies are in $OVPN_SHARE_DIR."
+# Backup client files if OVPN_SHARE_DIR is set and exists
+if [ -n "$OVPN_SHARE_DIR" ] && [ -d "$OVPN_SHARE_DIR" ]; then
+    cp $CLIENT_DIR/* $OVPN_SHARE_DIR
+    echo "Client files have been backed up to $OVPN_SHARE_DIR."
+else
+    echo "OVPN_SHARE_DIR is not set or does not exist. No files were backed up."
 fi
+
+echo "OpenVPN setup is complete. Client files are configured in $CLIENT_DIR."
 
 exit 0
