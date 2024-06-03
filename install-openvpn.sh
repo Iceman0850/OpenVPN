@@ -12,23 +12,16 @@ set -e
 # Define paths
 EASYRSA_DIR=~/easy-rsa
 OVPN_CONFIG_DIR=/etc/openvpn
-OVPN_SHARE_DIR=~/client_certs
+OVPN_CLIENT_DIR=$OVPN_CONFIG_DIR/client
+# Uncomment and set OVPN_SHARE_DIR to create a backup copy of the client files
+# OVPN_SHARE_DIR=~/client_certs
 
 # Define client and server names
 SERVER_NAME=Server
 CLIENT_NAME=Client
 
-# Define serve IPs
+# Define server IPs
 SERVER_IP="10.8.0.0 255.255.255.0"
-
-# Check if the client_certs directory exists, if not, create it
-if [ ! -d "$OVPN_SHARE_DIR" ]; then
-    mkdir -p "$OVPN_SHARE_DIR"
-    echo "Directory $OVPN_SHARE_DIR created."
-else
-    echo "Directory $OVPN_SHARE_DIR already exists."
-fi
-
 
 # Update and install OpenVPN
 apt-get update
@@ -62,9 +55,23 @@ cd $EASYRSA_DIR
 openvpn --genkey secret ta.key
 cp $EASYRSA_DIR/ta.key $OVPN_CONFIG_DIR
 
-# Copy the necessary files
+# Copy the necessary files to the server directory
 cp pki/ca.crt pki/issued/$SERVER_NAME.crt pki/private/$SERVER_NAME.key pki/dh.pem $OVPN_CONFIG_DIR
-cp pki/ca.crt pki/issued/$CLIENT_NAME.crt pki/private/$CLIENT_NAME.key $OVPN_SHARE_DIR
+
+# Copy the client files to the client directory
+mkdir -p $OVPN_CLIENT_DIR
+cp pki/ca.crt pki/issued/$CLIENT_NAME.crt pki/private/$CLIENT_NAME.key $OVPN_CLIENT_DIR
+
+# If OVPN_SHARE_DIR is set and not empty, create the directory if it does not exist and copy the files there
+if [ -n "$OVPN_SHARE_DIR" ]; then
+    if [ ! -d "$OVPN_SHARE_DIR" ]; then
+        mkdir -p "$OVPN_SHARE_DIR"
+        echo "Directory $OVPN_SHARE_DIR created."
+    else
+        echo "Directory $OVPN_SHARE_DIR already exists."
+    fi
+    cp pki/ca.crt pki/issued/$CLIENT_NAME.crt pki/private/$CLIENT_NAME.key $OVPN_SHARE_DIR
+fi
 
 # Configure the server
 cat > $OVPN_CONFIG_DIR/server.conf <<EOL
@@ -112,7 +119,7 @@ systemctl start openvpn@server
 systemctl enable openvpn@server
 
 # Generate client configuration
-cat > $OVPN_SHARE_DIR/$CLIENT_NAME.ovpn <<EOL
+cat > $OVPN_CLIENT_DIR/$CLIENT_NAME.ovpn <<EOL
 client
 dev tun
 proto udp
@@ -131,16 +138,19 @@ verb 3
 $(cat $OVPN_CONFIG_DIR/ca.crt)
 </ca>
 <cert>
-$(cat $OVPN_SHARE_DIR/$CLIENT_NAME.crt)
+$(cat $OVPN_CLIENT_DIR/$CLIENT_NAME.crt)
 </cert>
 <key>
-$(cat $OVPN_SHARE_DIR/$CLIENT_NAME.key)
+$(cat $OVPN_CLIENT_DIR/$CLIENT_NAME.key)
 </key>
 <tls-auth>
 $(cat $OVPN_CONFIG_DIR/ta.key)
 </tls-auth>
 EOL
 
-echo "OpenVPN setup is complete. All necessary files have been copied to $OVPN_SHARE_DIR."
+echo "OpenVPN setup is complete. Client files are in $OVPN_CLIENT_DIR."
+if [ -n "$OVPN_SHARE_DIR" ]; then
+    echo "Backup copies are in $OVPN_SHARE_DIR."
+fi
 
 exit 0
