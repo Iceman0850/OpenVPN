@@ -1,7 +1,3 @@
-# OpenVPN
-
-# OpenVPN Installation and Configuration Script
-
 This script is designed to automate the installation and configuration of OpenVPN on Ubuntu 22.04. It will install the necessary packages, set up the server and client certificates, configure firewall rules, and generate the client configuration file. Below is a detailed explanation of each section of the script.
 
 Script Overview
@@ -31,7 +27,6 @@ Server certificate and key
 Client certificate and key
 Diffie-Hellman parameters
 TLS-auth key
-
 5. Configure OpenVPN Server
 The OpenVPN server configuration file is created with the necessary settings, including port, protocol, device type, certificates, and keys. The configuration also includes settings for IP pool, routes, DNS, and other parameters to ensure the VPN functions correctly.
 
@@ -46,4 +41,3 @@ A client configuration file is generated and placed in the specified directory. 
 
 9. Optional Backup
 If OVPN_SHARE_DIR is uncommented and set, the client files are backed up to the specified directory.
-
