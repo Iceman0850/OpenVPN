@@ -31,6 +31,7 @@ Server certificate and key
 Client certificate and key
 Diffie-Hellman parameters
 TLS-auth key
+
 5. Configure OpenVPN Server
 The OpenVPN server configuration file is created with the necessary settings, including port, protocol, device type, certificates, and keys. The configuration also includes settings for IP pool, routes, DNS, and other parameters to ensure the VPN functions correctly.
 
