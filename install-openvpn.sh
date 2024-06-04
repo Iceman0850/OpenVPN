@@ -1,28 +1,55 @@
 #!/bin/bash
 
-# This script is intended to install openvpn on Ubuntu 22.04. It will install all required packages and build your client cert. This script will also set firewall rules.
-# Please Modify OVPN_SHARE_DIR to where you want the client files to be backed up to
+# This script is intended to install openvpn on Ubuntu 22.04. It will install all required packages and build your client OVPN file. This script will also set firewall rules and configure IP tables.
+# Please Uncomment and Modify OVPN_SHARE_DIR to where you want the client files to be backed up to
 # After Installation setup port forwarding for port 1194
-
-# you can customize SERVER_NAME and CLIENT_NAME 
 
 # Exit script on any error
 set -e
 
-# Define paths
+# Default values
+SERVER_NAME=Server
+CLIENT_NAME=Client
 EASYRSA_DIR=~/easy-rsa
 OVPN_CONFIG_DIR=/etc/openvpn
 CLIENT_DIR=$OVPN_CONFIG_DIR/client
-
-# Uncomment and set OVPN_SHARE_DIR to create a backup copy of the client files
-#OVPN_SHARE_DIR=~/backup
-
-# Define client and server names
-SERVER_NAME=Server
-CLIENT_NAME=Client
-
-# Define serve IPs
 SERVER_IP="10.8.0.0 255.255.255.0"
+CLIENT_CERT_PASSWORD=""
+
+# Replace with your local network IP range
+LOCAL_NETWORK="10.0.0.0/24"  
+
+# Uncomment if you want to specify a location to have the client files copied to a backup loacation
+# OVPN_SHARE_DIR=~/Backup
+
+# Display default values and prompt user for confirmation
+echo "Default values:"
+echo "Server Name: $SERVER_NAME"
+echo "Client Name: $CLIENT_NAME"
+echo "Server IP: $SERVER_IP"
+echo "Local Network: $LOCAL_NETWORK"
+
+read -p "Do you want to use the default values? (y/n): " use_defaults
+
+if [[ $use_defaults =~ ^[Yy](es)?$ ]]; then
+    echo "Using default values..."
+else
+    # Prompt user for values or use defaults
+    read -p "Enter the server name or press enter to use default [$SERVER_NAME]: " input
+    SERVER_NAME=${input:-$SERVER_NAME}
+
+    read -p "Enter the client name or press enter to use default [$CLIENT_NAME]: " input
+    CLIENT_NAME=${input:-$CLIENT_NAME}
+
+    read -p "Enter the server IP or press enter to use default [$SERVER_IP]: " input
+    SERVER_IP=${input:-$SERVER_IP}
+
+    read -p "Enter the local network or press enter to use default [$LOCAL_NETWORK]: " input
+    LOCAL_NETWORK=${input:-$LOCAL_NETWORK}
+
+    read -p "Enter the client certificate password (leave empty for no password): " input
+    CLIENT_CERT_PASSWORD=${input:-$CLIENT_CERT_PASSWORD}
+fi
 
 # Update and install OpenVPN
 apt-get update
@@ -46,7 +73,11 @@ cd $EASYRSA_DIR
 ./easyrsa --batch sign-req server $SERVER_NAME
 
 # Generate the client certificate and key
-./easyrsa --batch gen-req $CLIENT_NAME nopass
+if [ -z "$CLIENT_CERT_PASSWORD" ]; then
+    ./easyrsa --batch gen-req $CLIENT_NAME nopass
+else
+    echo -n "$CLIENT_CERT_PASSWORD" | ./easyrsa --batch gen-req $CLIENT_NAME
+fi
 ./easyrsa --batch sign-req client $CLIENT_NAME
 
 # Generate Diffie-Hellman parameters
@@ -78,6 +109,7 @@ auth SHA256
 server $SERVER_IP
 ifconfig-pool-persist ipp.txt
 push "redirect-gateway def1 bypass-dhcp"
+push "route $LOCAL_NETWORK"
 push "dhcp-option DNS 8.8.8.8"
 push "dhcp-option DNS 8.8.4.4"
 keepalive 10 120
@@ -90,23 +122,32 @@ explicit-exit-notify 1
 EOL
 
 # Enable IP forwarding
-echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+if ! grep -q "net.ipv4.ip_forward = 1" /etc/sysctl.conf; then
+    echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
+fi
 sysctl -p
 
-# Configure firewall
-apt install -y ufw
-ufw allow 1194/udp
+# Configure firewall rules using iptables
+if ! iptables -t nat -C POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE 2>/dev/null; then
+    iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE
+fi
 
-# Reset the firewall rules
-ufw disable
-ufw enable
+if ! iptables -C FORWARD -i tun0 -o ens18 -j ACCEPT 2>/dev/null; then
+    iptables -A FORWARD -i tun0 -o ens18 -j ACCEPT
+fi
 
-# Uncomment the following line if you are accessing the server via SSH and want to ensure you don't lock yourself out
-#ufw allow OpenSSH
+if ! iptables -C FORWARD -i ens18 -o tun0 -j ACCEPT 2>/dev/null; then
+    iptables -A FORWARD -i ens18 -o tun0 -j ACCEPT
+fi
+
+# Make firewall rules persistent
+apt-get install -y iptables-persistent
+netfilter-persistent save
 
 # Start the OpenVPN service
 systemctl start openvpn@server
 systemctl enable openvpn@server
+systemctl restart openvpn@server
 
 # Generate client configuration
 cat > $CLIENT_DIR/$CLIENT_NAME.ovpn <<EOL
